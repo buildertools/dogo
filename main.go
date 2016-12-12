@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	version, repo, bin            string
-	fetch, invoke, build, install bool
+	version, repo, bin               string
+	fetch, invoke, build, get, tools bool
 )
 
 const (
@@ -30,6 +30,10 @@ ENTRYPOINT ["{{.Bin}}"]
 
 	invokeSh = `{{.Bin}}() {
   docker run -it --name dogo-runtime -v "$(pwd)":/pwd -w /pwd dogo/{{.Bin}}:latest $@
+  docker rm -vf dogo-runtime >/dev/null
+}`
+	invokeToolsSh = `go() {
+  docker run -it --name dogo-runtime -v "$(pwd)":/pwd -w /pwd golang:{{.Version}} go $@
   docker rm -vf dogo-runtime >/dev/null
 }`
 )
@@ -46,21 +50,27 @@ func init() {
 	//ipt := flag.Bool(`sh`, false, `Display the invoking shell function.`)
 
 	flag.Parse()
+
 	if flag.NArg() < 1 {
-		panic(`Expected at least one argument.`)
-	}
-	if flag.NArg() == 2 {
-		if flag.Arg(0) == `get` {
+		fmt.Println(`Expected at least one argument.`)
+		flag.PrintDefaults()
+		os.Exit(1)
+	} else if flag.NArg() == 1 {
+		if flag.Arg(0) == `tools` {
+			tools = true
+		} else {
+			repo = flag.Arg(0)
+		}
+	} else if flag.NArg() == 2 {
+		if flag.Arg(0) == `build` {
 			repo = flag.Arg(1)
 			build = true
-		} else if flag.Arg(0) == `install` {
+		} else if flag.Arg(0) == `get` {
 			repo = flag.Arg(1)
-			install = true
+			get = true
 		} else {
 			panic(`Unknown command.`)
 		}
-	} else {
-		repo = flag.Arg(0)
 	}
 
 	version = *vpt
@@ -69,7 +79,9 @@ func init() {
 
 	var p = regexp.MustCompile(`^([^/]+/)*([^/]+)/?$`)
 	ps := p.FindStringSubmatch(repo)
-	bin = ps[len(ps)-1]
+	if !tools {
+		bin = ps[len(ps)-1]
+	}
 }
 
 func main() {
@@ -85,23 +97,32 @@ func main() {
 		doShell(in)
 	} else if build {
 		doBuild(in)
-	} else if install {
+	} else if get {
 		doBuild(in)
 		doShell(in)
+	} else if tools {
+		doToolsShell(in)
 	}
 }
 
 func doDockerfile(data wrapped) {
 	ft := template.Must(template.New("fetchDf").Parse(fetchDf))
 	if err := ft.Execute(os.Stdout, data); err != nil {
-		fmt.Println("executing fetchDf:", err)
+		fmt.Println(err)
 	}
 }
 
 func doShell(data wrapped) {
 	it := template.Must(template.New("invokeSh").Parse(invokeSh))
 	if err := it.Execute(os.Stdout, data); err != nil {
-		fmt.Println("executing invokeSh:", err)
+		fmt.Println(err)
+	}
+}
+
+func doToolsShell(data wrapped) {
+	it := template.Must(template.New("invokeToolsSh").Parse(invokeToolsSh))
+	if err := it.Execute(os.Stdout, data); err != nil {
+		fmt.Println(err)
 	}
 }
 
